@@ -1,10 +1,6 @@
-import json
-import re
-from urllib.parse import urljoin
-
 import requests
 from bs4 import BeautifulSoup
-from feedgen.feed import FeedGenerator
+from urllib.parse import urljoin
 
 BASE = "https://www.parliament.tas.gov.au"
 
@@ -14,99 +10,52 @@ CALENDAR_URL = (
     "sitting-calendar-2026"
 )
 
-session = requests.Session()
-
 print("Loading calendar...")
 
-response = session.get(CALENDAR_URL, timeout=30)
+response = requests.get(CALENDAR_URL, timeout=30)
 response.raise_for_status()
 
 html = response.text
+
+print("\n" + "=" * 80)
+print("FIRST 5000 CHARACTERS OF HTML")
+print("=" * 80)
+print(html[:5000])
+
+print("\n" + "=" * 80)
+print("SEARCHING FOR PROCEEDINGS LINKS")
+print("=" * 80)
+
 soup = BeautifulSoup(html, "html.parser")
 
-links = set()
+found_links = []
 
 for a in soup.find_all("a", href=True):
     href = a["href"]
 
     if "/house-of-assembly/chamber-proceedings/proceedings/" in href:
-        links.add(urljoin(BASE, href))
+        full_url = urljoin(BASE, href)
+        found_links.append(full_url)
 
-print(f"Found {len(links)} proceedings pages")
+if found_links:
+    print(f"\nFound {len(found_links)} proceedings links:\n")
 
-for link in sorted(links):
-    print(f"  {link}")
+    for link in sorted(set(found_links)):
+        print(link)
+else:
+    print("\nNO PROCEEDINGS LINKS FOUND")
 
-records = []
+print("\n" + "=" * 80)
+print("ALL LINKS ON PAGE")
+print("=" * 80)
 
-for page_url in sorted(links):
-    try:
-        print(f"Processing {page_url}")
+for a in soup.find_all("a", href=True):
+    href = a["href"]
+    text = a.get_text(" ", strip=True)
 
-        page_response = session.get(page_url, timeout=30)
-        page_response.raise_for_status()
+    print(f"TEXT: {text}")
+    print(f"HREF: {href}")
+    print("-" * 40)
 
-        page_html = page_response.text
-
-        pdfs = re.findall(
-            r'https://www\.parliament\.tas\.gov\.au/__data/assets/pdf_file/[^"]+\.pdf',
-            page_html,
-        )
-
-        if not pdfs:
-            print("  No PDF found")
-            continue
-
-        page_soup = BeautifulSoup(page_html, "html.parser")
-
-        h1 = page_soup.find("h1")
-
-        if h1:
-            title = h1.get_text(strip=True)
-        else:
-            title = page_url.rsplit("/", 1)[-1]
-
-        records.append(
-            {
-                "title": title,
-                "page": page_url,
-                "pdf": pdfs[0],
-            }
-        )
-
-        print(f"  Found PDF: {pdfs[0]}")
-
-    except Exception as e:
-        print(f"Error processing {page_url}")
-        print(str(e))
-
-records.reverse()
-
-print(f"Collected {len(records)} Hansard documents")
-
-with open("data.json", "w", encoding="utf-8") as f:
-    json.dump(records, f, indent=2)
-
-fg = FeedGenerator()
-
-fg.title("Tasmanian House of Assembly Hansard")
-fg.description("Automatic RSS feed of Tasmanian House of Assembly Hansard")
-fg.link(href=CALENDAR_URL)
-
-for item in records:
-    fe = fg.add_entry()
-
-    fe.title(item["title"])
-    fe.guid(item["page"])
-    fe.link(href=item["page"])
-
-    fe.enclosure(
-        item["pdf"],
-        "0",
-        "application/pdf",
-    )
-
-fg.rss_file("rss.xml")
-
-print("RSS created")
-`
+print("\nFinished.")
+``
