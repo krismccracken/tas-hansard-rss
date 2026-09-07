@@ -58,4 +58,3 @@ for a in soup.find_all("a", href=True):
     print("-" * 40)
 
 print("\nFinished.")
-``
