@@ -18,7 +18,10 @@ session = requests.Session()
 
 print("Loading calendar...")
 
-html = session.get(CALENDAR_URL, timeout=30).text
+response = session.get(CALENDAR_URL, timeout=30)
+response.raise_for_status()
+
+html = response.text
 soup = BeautifulSoup(html, "html.parser")
 
 links = set()
@@ -31,11 +34,19 @@ for a in soup.find_all("a", href=True):
 
 print(f"Found {len(links)} proceedings pages")
 
+for link in sorted(links):
+    print(f"  {link}")
+
 records = []
 
 for page_url in sorted(links):
     try:
-        page_html = session.get(page_url, timeout=30).text
+        print(f"Processing {page_url}")
+
+        page_response = session.get(page_url, timeout=30)
+        page_response.raise_for_status()
+
+        page_html = page_response.text
 
         pdfs = re.findall(
             r'https://www\.parliament\.tas\.gov\.au/__data/assets/pdf_file/[^"]+\.pdf',
@@ -43,11 +54,17 @@ for page_url in sorted(links):
         )
 
         if not pdfs:
+            print("  No PDF found")
             continue
 
-        soup = BeautifulSoup(page_html, "html.parser")
+        page_soup = BeautifulSoup(page_html, "html.parser")
 
-        title = soup.find("h1").get_text(strip=True)
+        h1 = page_soup.find("h1")
+
+        if h1:
+            title = h1.get_text(strip=True)
+        else:
+            title = page_url.rsplit("/", 1)[-1]
 
         records.append(
             {
@@ -57,25 +74,26 @@ for page_url in sorted(links):
             }
         )
 
+        print(f"  Found PDF: {pdfs[0]}")
+
     except Exception as e:
-        print(f"Error: {page_url}")
-        print(e)
+        print(f"Error processing {page_url}")
+        print(str(e))
 
 records.reverse()
 
 print(f"Collected {len(records)} Hansard documents")
 
-with open("data.json", "w") as f:
+with open("data.json", "w", encoding="utf-8") as f:
     json.dump(records, f, indent=2)
 
 fg = FeedGenerator()
 
 fg.title("Tasmanian House of Assembly Hansard")
-fg.description("Automatically generated Hansard feed")
+fg.description("Automatic RSS feed of Tasmanian House of Assembly Hansard")
 fg.link(href=CALENDAR_URL)
 
 for item in records:
-
     fe = fg.add_entry()
 
     fe.title(item["title"])
@@ -84,10 +102,11 @@ for item in records:
 
     fe.enclosure(
         item["pdf"],
-        0,
+        "0",
         "application/pdf",
     )
 
 fg.rss_file("rss.xml")
 
 print("RSS created")
+`
