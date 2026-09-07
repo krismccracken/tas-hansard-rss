@@ -1,6 +1,5 @@
 import json
 import re
-from datetime import datetime
 from urllib.parse import urljoin
 
 import requests
@@ -17,57 +16,54 @@ CALENDAR_URL = (
 
 session = requests.Session()
 
-calendar_html = session.get(CALENDAR_URL, timeout=30).text
-calendar_soup = BeautifulSoup(calendar_html, "html.parser")
+print("Loading calendar...")
 
-# Find proceedings links
-proceedings_links = set()
+html = session.get(CALENDAR_URL, timeout=30).text
+soup = BeautifulSoup(html, "html.parser")
 
-for a in calendar_soup.find_all("a", href=True):
+links = set()
+
+for a in soup.find_all("a", href=True):
     href = a["href"]
 
     if "/house-of-assembly/chamber-proceedings/proceedings/" in href:
-        proceedings_links.add(urljoin(BASE, href))
+        links.add(urljoin(BASE, href))
+
+print(f"Found {len(links)} proceedings pages")
 
 records = []
 
-for page_url in sorted(proceedings_links):
+for page_url in sorted(links):
     try:
-        html = session.get(page_url, timeout=30).text
+        page_html = session.get(page_url, timeout=30).text
 
         pdfs = re.findall(
-            r"https://www\.parliament\.tas\.gov\.au/__data/assets/pdf_file/[^\"]+\.pdf",
-            html,
+            r'https://www\.parliament\.tas\.gov\.au/__data/assets/pdf_file/[^"]+\.pdf',
+            page_html,
         )
 
-        hansard_pdf = next(
-            (
-                pdf
-                for pdf in pdfs
-                if "Full-Text" in pdf or "Hansard" in pdf
-            ),
-            None,
-        )
-
-        if not hansard_pdf:
+        if not pdfs:
             continue
 
-        soup = BeautifulSoup(html, "html.parser")
+        soup = BeautifulSoup(page_html, "html.parser")
 
         title = soup.find("h1").get_text(strip=True)
 
         records.append(
             {
                 "title": title,
-                "page_url": page_url,
-                "pdf_url": hansard_pdf,
+                "page": page_url,
+                "pdf": pdfs[0],
             }
         )
 
     except Exception as e:
-        print(f"Failed: {page_url} ({e})")
+        print(f"Error: {page_url}")
+        print(e)
 
-records.sort(key=lambda x: x["title"], reverse=True)
+records.reverse()
+
+print(f"Collected {len(records)} Hansard documents")
 
 with open("data.json", "w") as f:
     json.dump(records, f, indent=2)
@@ -75,20 +71,23 @@ with open("data.json", "w") as f:
 fg = FeedGenerator()
 
 fg.title("Tasmanian House of Assembly Hansard")
+fg.description("Automatically generated Hansard feed")
 fg.link(href=CALENDAR_URL)
-fg.description("Automatic feed of Hansard publications")
 
 for item in records:
+
     fe = fg.add_entry()
+
     fe.title(item["title"])
-    fe.link(href=item["page_url"])
-    fe.guid(item["page_url"])
+    fe.guid(item["page"])
+    fe.link(href=item["page"])
+
     fe.enclosure(
-        item["pdf_url"],
+        item["pdf"],
         0,
         "application/pdf",
     )
 
 fg.rss_file("rss.xml")
 
-print(f"Generated {len(records)} entries")
+print("RSS created")
